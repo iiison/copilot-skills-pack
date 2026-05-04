@@ -33,6 +33,8 @@ node setup.mjs
 
 That's it. Reload your editor window and the skills are live.
 
+> **New to this?** Read **[HOW_TO_USE.md](./HOW_TO_USE.md)** for a full walkthrough from idea to ship, with prompt templates for each step.
+
 ### Options
 
 ```bash
