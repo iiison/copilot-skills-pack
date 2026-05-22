@@ -6,6 +6,11 @@
       "type": "git",
       "repo": "https://github.com/addyosmani/agent-skills.git",
       "ref": "main"
+    },
+    {
+      "id": "local",
+      "type": "local",
+      "path": "local-skills"
     }
   ],
   "alwaysOn": [
@@ -68,6 +73,12 @@
       "applyTo": "**/*.md",
       "note": "Document the why, not just the what.",
       "source": "upstream"
+    },
+    {
+      "name": "ui-conventions",
+      "applyTo": "**/*.{tsx,ts,css}",
+      "note": "Repo UI guide is the source of truth; reuse over re-creation.",
+      "source": "local"
     }
   ],
   "onDemand": [
@@ -140,6 +151,34 @@
     {
       "name": "ship",
       "source": "upstream"
+    },
+    {
+      "name": "ui-learn",
+      "source": "local"
+    },
+    {
+      "name": "ui-mcp-status",
+      "source": "local"
+    },
+    {
+      "name": "ui-refine",
+      "source": "local"
+    },
+    {
+      "name": "ui-spec",
+      "source": "local"
+    },
+    {
+      "name": "ui-plan",
+      "source": "local"
+    },
+    {
+      "name": "ui-build",
+      "source": "local"
+    },
+    {
+      "name": "ui-flag",
+      "source": "local"
     }
   ],
   "personas": [
@@ -154,6 +193,10 @@
     {
       "name": "security-auditor",
       "source": "upstream"
+    },
+    {
+      "name": "frontend-craftsman",
+      "source": "local"
     }
   ]
 }
