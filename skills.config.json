@@ -1,85 +1,159 @@
 {
   "$schema": "./skills.schema.json",
-  "source": {
-    "repo": "https://github.com/addyosmani/agent-skills.git",
-    "ref": "main"
-  },
+  "sources": [
+    {
+      "id": "upstream",
+      "type": "git",
+      "repo": "https://github.com/addyosmani/agent-skills.git",
+      "ref": "main"
+    }
+  ],
   "alwaysOn": [
     {
       "name": "incremental-implementation",
       "applyTo": "**",
-      "note": "Thin vertical slices for any multi-file change."
+      "note": "Thin vertical slices for any multi-file change.",
+      "source": "upstream"
     },
     {
       "name": "git-workflow-and-versioning",
       "applyTo": "**",
-      "note": "Atomic commits, ~100-line change sizing."
+      "note": "Atomic commits, ~100-line change sizing.",
+      "source": "upstream"
     },
     {
       "name": "code-review-and-quality",
       "applyTo": "**",
-      "note": "Five-axis review applied to every diff."
+      "note": "Five-axis review applied to every diff.",
+      "source": "upstream"
     },
     {
       "name": "debugging-and-error-recovery",
       "applyTo": "**",
-      "note": "Five-step triage when things break."
+      "note": "Five-step triage when things break.",
+      "source": "upstream"
     },
     {
       "name": "test-driven-development",
       "applyTo": "**/*.{ts,tsx,js,jsx,mjs,cjs}",
-      "note": "Red-Green-Refactor for code files only."
+      "note": "Red-Green-Refactor for code files only.",
+      "source": "upstream"
     },
     {
       "name": "frontend-ui-engineering",
       "applyTo": "**/*.{tsx,jsx,css,scss,less}",
-      "note": "Component architecture + a11y for UI files."
+      "note": "Component architecture + a11y for UI files.",
+      "source": "upstream"
     },
     {
       "name": "security-and-hardening",
       "applyTo": "{**/api/**,**/auth/**,middleware*.ts,middleware*.js,**/*.security.ts}",
-      "note": "OWASP coverage for boundary code."
+      "note": "OWASP coverage for boundary code.",
+      "source": "upstream"
     },
     {
       "name": "spec-driven-development",
       "applyTo": "**/*.md",
-      "note": "PRD discipline when editing specs/docs."
+      "note": "PRD discipline when editing specs/docs.",
+      "source": "upstream"
     },
     {
       "name": "planning-and-task-breakdown",
       "applyTo": "**/*.md",
-      "note": "Decompose specs into atomic tasks."
+      "note": "Decompose specs into atomic tasks.",
+      "source": "upstream"
     },
     {
       "name": "documentation-and-adrs",
       "applyTo": "**/*.md",
-      "note": "Document the why, not just the what."
+      "note": "Document the why, not just the what.",
+      "source": "upstream"
     }
   ],
   "onDemand": [
-    "idea-refine",
-    "context-engineering",
-    "source-driven-development",
-    "api-and-interface-design",
-    "browser-testing-with-devtools",
-    "code-simplification",
-    "performance-optimization",
-    "ci-cd-and-automation",
-    "deprecation-and-migration",
-    "shipping-and-launch"
+    {
+      "name": "idea-refine",
+      "source": "upstream"
+    },
+    {
+      "name": "context-engineering",
+      "source": "upstream"
+    },
+    {
+      "name": "source-driven-development",
+      "source": "upstream"
+    },
+    {
+      "name": "api-and-interface-design",
+      "source": "upstream"
+    },
+    {
+      "name": "browser-testing-with-devtools",
+      "source": "upstream"
+    },
+    {
+      "name": "code-simplification",
+      "source": "upstream"
+    },
+    {
+      "name": "performance-optimization",
+      "source": "upstream"
+    },
+    {
+      "name": "ci-cd-and-automation",
+      "source": "upstream"
+    },
+    {
+      "name": "deprecation-and-migration",
+      "source": "upstream"
+    },
+    {
+      "name": "shipping-and-launch",
+      "source": "upstream"
+    }
   ],
   "slashCommands": [
-    "spec",
-    "plan",
-    "build",
-    "test",
-    "review",
-    "code-simplify",
-    "ship"
+    {
+      "name": "spec",
+      "source": "upstream"
+    },
+    {
+      "name": "plan",
+      "source": "upstream"
+    },
+    {
+      "name": "build",
+      "source": "upstream"
+    },
+    {
+      "name": "test",
+      "source": "upstream"
+    },
+    {
+      "name": "review",
+      "source": "upstream"
+    },
+    {
+      "name": "code-simplify",
+      "source": "upstream"
+    },
+    {
+      "name": "ship",
+      "source": "upstream"
+    }
   ],
   "personas": [
-    "code-reviewer",
-    "test-engineer",
-    "security-auditor"
+    {
+      "name": "code-reviewer",
+      "source": "upstream"
+    },
+    {
+      "name": "test-engineer",
+      "source": "upstream"
+    },
+    {
+      "name": "security-auditor",
+      "source": "upstream"
+    }
   ]
 }

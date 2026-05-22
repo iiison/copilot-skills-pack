@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/iiison/copilot-skills-pack/skills.schema.json",
+  "title": "copilot-skills-pack config",
+  "description": "Configuration for the copilot-skills-pack installer. Supports both the legacy single-source shape and the multi-source shape introduced for the Figma → React UI skill suite.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+
+    "source": {
+      "description": "Legacy single-source shape. The installer migrates this in place to `sources` on first run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "ref"],
+      "properties": {
+        "repo": { "type": "string", "minLength": 1 },
+        "ref": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "sources": {
+      "description": "Multi-source list. Each source has a unique id referenced by per-skill `source` fields.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/source" }
+    },
+
+    "alwaysOn": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/alwaysOnEntry" }
+    },
+
+    "onDemand": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/skillEntry" }
+    },
+
+    "slashCommands": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/skillEntry" }
+    },
+
+    "personas": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/skillEntry" }
+    }
+  },
+
+  "oneOf": [
+    { "required": ["source"], "not": { "required": ["sources"] } },
+    { "required": ["sources"], "not": { "required": ["source"] } }
+  ],
+
+  "definitions": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "Stable identifier referenced by per-skill `source` fields."
+        },
+        "type": { "enum": ["git", "local"] },
+        "repo": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required for type=git. Clone URL."
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required for type=git. Branch, tag, or commit SHA."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required for type=local. Repo-relative path to the source root."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "git" } } },
+          "then": { "required": ["repo", "ref"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "local" } } },
+          "then": { "required": ["path"] }
+        }
+      ]
+    },
+
+    "alwaysOnEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "applyTo"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "applyTo": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" },
+        "source": {
+          "type": "string",
+          "description": "Source id. Defaults to the first source in `sources` (or `upstream` for legacy configs)."
+        }
+      }
+    },
+
+    "skillEntry": {
+      "description": "Either a bare-string name (legacy) or an object with `name` and optional `source`.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "source": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}

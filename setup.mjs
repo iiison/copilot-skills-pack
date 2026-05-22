@@ -26,7 +26,10 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = __dirname;
-const CACHE_DIR = path.join(ROOT, ".cache", "agent-skills");
+const SOURCES_CACHE_BASE = path.join(ROOT, ".cache", "sources");
+const LEGACY_CACHE_DIR = path.join(ROOT, ".cache", "agent-skills");
+// Destination of the one-time legacy cache rename.
+const CACHE_DIR = path.join(SOURCES_CACHE_BASE, "upstream");
 const CONFIG_PATH = path.join(ROOT, "skills.config.json");
 const MARKER = "<!-- managed-by: copilot-skills-pack -->";
 
@@ -67,14 +70,15 @@ const log = {
       if (!ok) return log.warn("Aborted.");
     }
 
-    syncSourceRepo(config.source);
+    migrateCacheLayout();
+    syncAllGitSources(config.sources);
     ensureDir(targetDir);
 
     const written = [];
-    written.push(...installInstructions(config.alwaysOn, targetDir));
-    written.push(...installPrompts(config.onDemand, targetDir));
-    written.push(...installSlashCommands(config.slashCommands, targetDir));
-    written.push(...installPersonas(config.personas, targetDir));
+    written.push(...installInstructions(config.alwaysOn, targetDir, config.sources));
+    written.push(...installPrompts(config.onDemand, targetDir, config.sources));
+    written.push(...installSlashCommands(config.slashCommands, targetDir, config.sources));
+    written.push(...installPersonas(config.personas, targetDir, config.sources));
 
     enableChatPromptFiles(targetDir);
 
@@ -92,7 +96,106 @@ const log = {
 // ─── Steps ─────────────────────────────────────────────────────────────────
 function loadConfig() {
   if (!fs.existsSync(CONFIG_PATH)) throw new Error(`Missing ${CONFIG_PATH}`);
-  return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  return migrateConfigIfLegacy(raw);
+}
+
+/**
+ * Migrate a legacy `skills.config.json` to the multi-source schema.
+ *
+ * Legacy shape:
+ *   - top-level `source: { repo, ref }` (singular)
+ *   - bare-string entries in onDemand / slashCommands / personas
+ *   - alwaysOn entries without a `source` field
+ *
+ * New shape:
+ *   - top-level `sources: [{ id, type, ... }]`
+ *   - every entry is `{ name, source, ... }` (source defaults to "upstream")
+ *
+ * Idempotent: a fully migrated file is detected and returned unchanged.
+ * Backups go to `<config>.bak.copilot-skills-pack` (created at most once).
+ */
+function migrateConfigIfLegacy(raw) {
+  if (!detectLegacy(raw)) return raw;
+
+  log.step("Migrating skills.config.json to multi-source schema");
+
+  const migrated = {};
+  if (raw.$schema) migrated.$schema = raw.$schema;
+
+  if (Array.isArray(raw.sources)) {
+    migrated.sources = raw.sources;
+  } else if (raw.source && raw.source.repo && raw.source.ref) {
+    migrated.sources = [
+      { id: "upstream", type: "git", repo: raw.source.repo, ref: raw.source.ref },
+    ];
+  } else {
+    throw new Error(
+      "Cannot migrate skills.config.json: missing both `sources` and a usable `source` object."
+    );
+  }
+
+  migrated.alwaysOn = (raw.alwaysOn || []).map((item) =>
+    item.source ? item : { ...item, source: "upstream" }
+  );
+
+  for (const key of ["onDemand", "slashCommands", "personas"]) {
+    migrated[key] = (raw[key] || []).map((item) => {
+      if (typeof item === "string") return { name: item, source: "upstream" };
+      return item.source ? item : { ...item, source: "upstream" };
+    });
+  }
+
+  if (args.dryRun) {
+    log.dim(`[dry-run] would back up ${path.basename(CONFIG_PATH)} and rewrite with multi-source schema`);
+    return migrated;
+  }
+
+  backupOnce(CONFIG_PATH);
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(migrated, null, 2) + "\n", "utf8");
+  log.ok(`Migrated; backup at ${path.basename(CONFIG_PATH)}.bak.copilot-skills-pack`);
+  return migrated;
+}
+
+function detectLegacy(raw) {
+  if (raw.source && !raw.sources) return true;
+  for (const key of ["onDemand", "slashCommands", "personas"]) {
+    if (Array.isArray(raw[key]) && raw[key].some((it) => typeof it === "string")) return true;
+  }
+  if (Array.isArray(raw.alwaysOn) && raw.alwaysOn.some((it) => !it.source)) return true;
+  return false;
+}
+
+/**
+ * Resolve the on-disk root directory for a configured source.
+ *   - type=git   → `<repo>/.cache/sources/<id>/`
+ *   - type=local → `path.resolve(ROOT, src.path)`
+ * Throws on an unknown source id or unsupported type.
+ */
+function resolveSourceDir(sources, sourceId) {
+  const src = sources.find((s) => s.id === sourceId);
+  if (!src) throw new Error(`Unknown source id: ${sourceId}`);
+  if (src.type === "git") return path.join(SOURCES_CACHE_BASE, src.id);
+  if (src.type === "local") return path.resolve(ROOT, src.path);
+  throw new Error(`Unsupported source type for '${sourceId}': ${src.type}`);
+}
+
+/**
+ * One-time rename of the pre-v2 cache directory.
+ *   `.cache/agent-skills/`  →  `.cache/sources/upstream/`
+ * Idempotent: returns silently if either the destination already exists or
+ * the legacy path is absent.
+ */
+function migrateCacheLayout() {
+  if (!fs.existsSync(LEGACY_CACHE_DIR)) return;
+  if (fs.existsSync(CACHE_DIR)) return;
+  log.info(`Renaming cache: ${path.relative(ROOT, LEGACY_CACHE_DIR)} → ${path.relative(ROOT, CACHE_DIR)}`);
+  if (args.dryRun) {
+    log.dim(`[dry-run] mv ${LEGACY_CACHE_DIR} ${CACHE_DIR}`);
+    return;
+  }
+  ensureDir(path.dirname(CACHE_DIR));
+  fs.renameSync(LEGACY_CACHE_DIR, CACHE_DIR);
 }
 
 function requireGit() {
@@ -101,7 +204,9 @@ function requireGit() {
 }
 
 async function resolveTargetDir() {
-  if (args.targetPath) return path.resolve(args.targetPath);
+  if (args.targetPath) {
+    return { promptsDir: path.resolve(args.targetPath), editor: null };
+  }
 
   const candidates = discoverEditors();
   if (candidates.length === 0) {
@@ -162,19 +267,31 @@ function vsUserDirs(home, productName) {
   return [path.join(xdg, productName, "User")];
 }
 
-function syncSourceRepo({ repo, ref }) {
-  log.step("Sync skills source");
-  ensureDir(path.dirname(CACHE_DIR));
-  if (fs.existsSync(path.join(CACHE_DIR, ".git"))) {
-    log.info("Updating cached agent-skills repo…");
-    runGit(["-C", CACHE_DIR, "fetch", "--depth=1", "origin", ref]);
-    runGit(["-C", CACHE_DIR, "checkout", ref]);
-    runGit(["-C", CACHE_DIR, "reset", "--hard", `origin/${ref}`]);
-  } else {
-    log.info(`Cloning ${repo} (ref: ${ref})…`);
-    runGit(["clone", "--depth=1", "--branch", ref, repo, CACHE_DIR]);
+function syncAllGitSources(sources) {
+  log.step("Sync skills sources");
+  const gitSources = sources.filter((s) => s.type === "git");
+  if (gitSources.length === 0) {
+    log.dim("no git sources configured");
+    return;
   }
-  log.ok(`Source ready at ${CACHE_DIR}`);
+  ensureDir(SOURCES_CACHE_BASE);
+  for (const src of gitSources) {
+    syncOneGitSource(src);
+  }
+}
+
+function syncOneGitSource(src) {
+  const dir = path.join(SOURCES_CACHE_BASE, src.id);
+  if (fs.existsSync(path.join(dir, ".git"))) {
+    log.info(`Updating cached '${src.id}' (${src.repo} @ ${src.ref})…`);
+    runGit(["-C", dir, "fetch", "--depth=1", "origin", src.ref]);
+    runGit(["-C", dir, "checkout", src.ref]);
+    runGit(["-C", dir, "reset", "--hard", `origin/${src.ref}`]);
+  } else {
+    log.info(`Cloning '${src.id}': ${src.repo} (ref: ${src.ref})…`);
+    runGit(["clone", "--depth=1", "--branch", src.ref, src.repo, dir]);
+  }
+  log.ok(`Source '${src.id}' ready at ${dir}`);
 }
 
 function runGit(argv) {
@@ -183,13 +300,16 @@ function runGit(argv) {
   if (r.status !== 0) throw new Error(`git ${argv.join(" ")} failed`);
 }
 
-function installInstructions(items, targetDir) {
+function installInstructions(items, targetDir, sources) {
   log.step(`Always-on instructions (${items.length})`);
+  warnOnCollisions(items, "always-on instruction");
   const written = [];
   for (const item of items) {
-    const src = path.join(CACHE_DIR, "skills", item.name, "SKILL.md");
+    const sourceDir = safeResolveSource(sources, item.source, `always-on '${item.name}'`);
+    if (!sourceDir) continue;
+    const src = path.join(sourceDir, "skills", item.name, "SKILL.md");
     if (!fs.existsSync(src)) {
-      log.warn(`skip ${item.name}: SKILL.md not found in source`);
+      log.warn(`skip ${item.name}: ${path.relative(ROOT, src)} not found`);
       continue;
     }
     const body = fs.readFileSync(src, "utf8");
@@ -205,71 +325,138 @@ function installInstructions(items, targetDir) {
   return written;
 }
 
-function installPrompts(names, targetDir) {
-  log.step(`On-demand prompts (${names.length})`);
+function installPrompts(items, targetDir, sources) {
+  log.step(`On-demand prompts (${items.length})`);
+  warnOnCollisions(items, "on-demand prompt");
   const written = [];
-  for (const name of names) {
-    const src = path.join(CACHE_DIR, "skills", name, "SKILL.md");
+  for (const item of items) {
+    const sourceDir = safeResolveSource(sources, item.source, `on-demand '${item.name}'`);
+    if (!sourceDir) continue;
+    const src = path.join(sourceDir, "skills", item.name, "SKILL.md");
     if (!fs.existsSync(src)) {
-      log.warn(`skip ${name}: SKILL.md not found`);
+      log.warn(`skip ${item.name}: ${path.relative(ROOT, src)} not found`);
       continue;
     }
     const body = stripFrontmatter(fs.readFileSync(src, "utf8"));
-    const out = path.join(targetDir, `${name}.prompt.md`);
+    const out = path.join(targetDir, `${item.name}.prompt.md`);
     const content =
       `---\n` +
       `mode: ask\n` +
-      `description: ${JSON.stringify(`On-demand skill: ${name}`)}\n` +
+      `description: ${JSON.stringify(`On-demand skill: ${item.name}`)}\n` +
       `---\n${MARKER}\n\n${body.trim()}\n`;
     if (writeManaged(out, content)) written.push(out);
   }
   return written;
 }
 
-function installSlashCommands(names, targetDir) {
-  log.step(`Slash commands (${names.length})`);
+function installSlashCommands(items, targetDir, sources) {
+  warnOnCollisions(items, "slash command");
+  log.step(`Slash commands (${items.length})`);
   const written = [];
-  for (const name of names) {
-    // Try Claude Code commands first, then fall back to Gemini
-    const candidates = [
-      path.join(CACHE_DIR, ".claude", "commands", `${name}.md`),
-      path.join(CACHE_DIR, ".gemini", "commands", `${name}.md`),
-    ];
-    const src = candidates.find((p) => fs.existsSync(p));
+  for (const item of items) {
+    const src = resolveSlashCommandFile(sources, item);
     if (!src) {
-      log.warn(`skip /${name}: command file not found`);
+      log.warn(`skip /${item.name}: command file not found`);
       continue;
     }
     const body = stripFrontmatter(fs.readFileSync(src, "utf8"));
-    const out = path.join(targetDir, `${name}.prompt.md`);
+    const out = path.join(targetDir, `${item.name}.prompt.md`);
     const content =
       `---\n` +
       `mode: agent\n` +
-      `description: ${JSON.stringify(`Lifecycle command: /${name}`)}\n` +
+      `description: ${JSON.stringify(`Lifecycle command: /${item.name}`)}\n` +
       `---\n${MARKER}\n\n${body.trim()}\n`;
     if (writeManaged(out, content)) written.push(out);
   }
   return written;
 }
 
-function installPersonas(names, targetDir) {
-  log.step(`Agent personas / chat modes (${names.length})`);
+function installPersonas(items, targetDir, sources) {
+  warnOnCollisions(items, "persona");
+  log.step(`Agent personas / chat modes (${items.length})`);
   const written = [];
-  for (const name of names) {
-    const src = path.join(CACHE_DIR, "agents", `${name}.md`);
+  for (const item of items) {
+    const sourceDir = safeResolveSource(sources, item.source, `persona '${item.name}'`);
+    if (!sourceDir) continue;
+    const src = path.join(sourceDir, "agents", `${item.name}.md`);
     if (!fs.existsSync(src)) {
-      log.warn(`skip persona ${name}: not found`);
+      log.warn(`skip persona ${item.name}: ${path.relative(ROOT, src)} not found`);
       continue;
     }
     const body = stripFrontmatter(fs.readFileSync(src, "utf8"));
-    const out = path.join(targetDir, `${name}.chatmode.md`);
+    const out = path.join(targetDir, `${item.name}.chatmode.md`);
     const content =
       `---\n` +
-      `description: ${JSON.stringify(`Persona: ${name}`)}\n` +
+      `description: ${JSON.stringify(`Persona: ${item.name}`)}\n` +
       `---\n${MARKER}\n\n${body.trim()}\n`;
     if (writeManaged(out, content)) written.push(out);
   }
   return written;
+}
+
+/**
+ * Slash-command file resolution diverges by source type:
+ *   - git   → `<sourceDir>/.claude/commands/<name>.md` then `.gemini/commands/<name>.md`
+ *   - local → `<sourceDir>/skills/<name>/SKILL.md`
+ */
+function resolveSlashCommandFile(sources, item) {
+  const sourceDir = safeResolveSource(sources, item.source, `/${item.name}`);
+  if (!sourceDir) return null;
+  const src = sources.find((s) => s.id === item.source);
+  if (src && src.type === "local") {
+    const p = path.join(sourceDir, "skills", item.name, "SKILL.md");
+    return fs.existsSync(p) ? p : null;
+  }
+  // git (and any future remote type): preserve the upstream fallback chain
+  const candidates = [
+    path.join(sourceDir, ".claude", "commands", `${item.name}.md`),
+    path.join(sourceDir, ".gemini", "commands", `${item.name}.md`),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) || null;
+}
+
+/**Warn when the same name appears in multiple entries of the same array.
+ * Later entries win (the install loop overwrites in order). No-op if the
+ * array has zero duplicates.
+ */
+function warnOnCollisions(items, kind) {
+  const seen = new Map();
+  for (const item of items) {
+    const prev = seen.get(item.name);
+    if (prev) {
+      log.warn(
+        `${kind} '${item.name}' defined by both '${prev}' and '${item.source}'; ` +
+        `using '${item.source}' (later entry wins)`
+      );
+    }
+    seen.set(item.name, item.source);
+  }
+}
+
+/**
+ * 
+ * Resolve a source dir, logging a warning instead of throwing when the source
+ * id is unknown. Returns `null` if the lookup failed (callers should skip
+ * the entry rather than abort the whole install).
+ */
+function safeResolveSource(sources, sourceId, label) {
+  if (!sourceId) {
+    log.warn(`skip ${label}: missing 'source' field`);
+    return null;
+  }
+  try {
+    const dir = resolveSourceDir(sources, sourceId);
+    // For local sources, warn (but allow) when the path does not exist yet.
+    const src = sources.find((s) => s.id === sourceId);
+    if (src && src.type === "local" && !fs.existsSync(dir)) {
+      log.warn(`source '${sourceId}' path does not exist: ${path.relative(ROOT, dir)}`);
+      return null;
+    }
+    return dir;
+  } catch (e) {
+    log.warn(`skip ${label}: ${e.message}`);
+    return null;
+  }
 }
 
 function enableChatPromptFiles(promptsDir) {
@@ -407,20 +594,20 @@ Options:
 }
 
 function printNextSteps(config) {
-  const all = [
-    ...config.alwaysOn.map((s) => s.name),
-    ...config.onDemand,
-  ];
+  const slashList = config.slashCommands.map((s) => `/${s.name}`).join("  ");
+  const personaList = config.personas.map((s) => s.name).join(" · ");
+  const onDemandSample = config.onDemand.slice(0, 3).map((s) => s.name).join(", ");
+
   console.log(`
 ${paint(c.bold, "Next steps:")}
   1. Reload your editor window (Cmd/Ctrl+Shift+P → "Developer: Reload Window").
   2. Open Copilot Chat. Type "/" to see lifecycle commands:
-       /spec  /plan  /build  /test  /review  /code-simplify  /ship
+       ${slashList}
   3. Pick a chat mode from the mode dropdown:
-       code-reviewer · test-engineer · security-auditor
+       ${personaList}
   4. Always-on skills auto-apply to matching files based on \`applyTo\` globs.
   5. To invoke an on-demand skill, attach it: type "#" in chat and pick e.g.
-       ${all.slice(0, 3).join(", ")} …
+       ${onDemandSample} …
 
 ${paint(c.dim, "Update later: git pull && node setup.mjs --yes")}
 ${paint(c.dim, "Uninstall:    node setup.mjs --uninstall")}

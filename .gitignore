@@ -51,3 +51,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# copilot-skills-pack: source cache + transient backups
+.cache/
+*.bak.copilot-skills-pack
+
