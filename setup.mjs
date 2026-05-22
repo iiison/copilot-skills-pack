@@ -23,6 +23,19 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import {
+  resolveMcpConfigPath,
+  readMcpJson,
+  backupMcpJsonOnce,
+  registerMcpServers,
+  uninstallMcpServers,
+  probeDevMode,
+  patEnvFilePath,
+  patResolutionState,
+  writePatToEnvFile,
+  deletePatFile,
+} from "./lib/mcp.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = __dirname;
@@ -62,7 +75,8 @@ const log = {
 
     requireGit();
     const config = loadConfig();
-    const targetDir = await resolveTargetDir();
+    const choice = await resolveTargetDir();
+    const targetDir = choice.promptsDir;
     log.info(`Target prompts dir: ${paint(c.bold, targetDir)}`);
 
     if (!args.yes && !args.dryRun) {
@@ -81,6 +95,13 @@ const log = {
     written.push(...installPersonas(config.personas, targetDir, config.sources));
 
     enableChatPromptFiles(targetDir);
+
+    if (!args.skipMcp) {
+      if (choice.editor) await installMcp(choice.editor);
+      else log.dim("MCP install skipped: --target-path override has no editor id");
+    } else {
+      log.dim("MCP install skipped: --skip-mcp");
+    }
 
     log.step("Done");
     log.ok(`${written.length} files ${args.dryRun ? "would be" : ""} written into ${targetDir}`);
@@ -224,14 +245,14 @@ async function resolveTargetDir() {
   }
 
   if (chosen.length === 1 || args.yes) {
-    return path.join(chosen[0].userDir, "prompts");
+    return { promptsDir: path.join(chosen[0].userDir, "prompts"), editor: chosen[0] };
   }
 
   const idx = await pickFromList(
     "Multiple editors detected. Which one to install into?",
     chosen.map((c) => `${c.label}  ${paint(c.dim, "(" + c.userDir + ")")}`),
   );
-  return path.join(chosen[idx].userDir, "prompts");
+  return { promptsDir: path.join(chosen[idx].userDir, "prompts"), editor: chosen[idx] };
 }
 
 function discoverEditors() {
@@ -499,7 +520,7 @@ function patchSettingsJson(raw) {
 }
 
 // ─── Uninstall ─────────────────────────────────────────────────────────────
-function uninstall() {
+async function uninstall() {
   log.step("Uninstall — removing managed files");
   const candidates = discoverEditors();
   let total = 0;
@@ -519,6 +540,206 @@ function uninstall() {
     }
   }
   log.ok(`${total} managed files ${args.dryRun ? "would be" : ""} removed`);
+  await uninstallMcpAll(candidates);
+}
+
+// ─── MCP installation (T11–T17) ────────────────────────────────────────────
+
+/**
+ * Resolve the absolute path to the Framelink CLI shipped with the pinned
+ * `figma-developer-mcp` dependency. Uses the package's `bin` map so we
+ * track upstream renames without hard-coding `dist/cli.js` vs `dist/bin.js`.
+ */
+function resolveFramelinkCli() {
+  const require = createRequire(import.meta.url);
+  const pkgPath = require.resolve("figma-developer-mcp/package.json");
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+  const bin = typeof pkg.bin === "string"
+    ? pkg.bin
+    : pkg.bin && pkg.bin["figma-developer-mcp"];
+  if (!bin) throw new Error("figma-developer-mcp package.json has no usable `bin` field");
+  return path.resolve(path.dirname(pkgPath), bin);
+}
+
+/**
+ * Full MCP install for one editor: backup mcp.json → register servers →
+ * resolve PAT (env or file or prompt) → reachability probe. Non-fatal:
+ * any single step failing logs a warning and the install continues.
+ */
+async function installMcp(editor) {
+  log.step(`Figma MCP servers (${editor.label})`);
+
+  // 1. Ensure the pinned package is installed.
+  const nodeModulesPkg = path.join(ROOT, "node_modules", "figma-developer-mcp", "package.json");
+  if (!fs.existsSync(nodeModulesPkg)) {
+    if (args.dryRun) {
+      log.dim(`[dry-run] would run: npm install (figma-developer-mcp missing)`);
+    } else {
+      log.info("Installing figma-developer-mcp (one-time)…");
+      const r = spawnSync("npm", ["install", "--no-audit", "--no-fund"], { cwd: ROOT, stdio: "inherit" });
+      if (r.status !== 0) {
+        log.warn("npm install failed; MCP step skipped. Run `npm install` manually and re-run.");
+        return;
+      }
+    }
+  }
+
+  let framelinkCli;
+  try { framelinkCli = resolveFramelinkCli(); }
+  catch (e) {
+    log.warn(`MCP step skipped: ${e.message}`);
+    return;
+  }
+
+  // 2. Locate, back up, and parse mcp.json.
+  const mcpPath = resolveMcpConfigPath(editor.id, editor.userDir);
+  let mcp;
+  try { mcp = readMcpJson(mcpPath); }
+  catch (e) {
+    log.warn(e.message);
+    return;
+  }
+  backupMcpJsonOnce(mcpPath, { dryRun: args.dryRun });
+
+  // 3. Register entries (conservative: skip on drift unless --force).
+  const result = registerMcpServers(mcp, framelinkCli, { force: args.force });
+  for (const name of result.conflicts) {
+    log.warn(`'${name}' already exists in mcp.json with a different shape; not overwriting (re-run with --force to update)`);
+  }
+  if (result.changed) {
+    if (args.dryRun) {
+      log.dim(`[dry-run] would write ${mcpPath}`);
+    } else {
+      ensureDir(path.dirname(mcpPath));
+      fs.writeFileSync(mcpPath, JSON.stringify(mcp, null, 2) + "\n", "utf8");
+      log.ok(`updated ${path.relative(os.homedir(), mcpPath)}`);
+    }
+  } else {
+    log.dim("mcp.json unchanged");
+  }
+
+  // 4. Resolve PAT.
+  await ensurePatConfigured();
+
+  // 5. Probe Dev Mode (non-fatal).
+  const probe = await probeDevMode("http://127.0.0.1:3845/sse", { timeoutMs: 3000 });
+  if (probe.reachable) {
+    log.ok("Figma Dev Mode MCP reachable");
+  } else {
+    log.warn(`Figma Dev Mode MCP not reachable (${probe.reason || "unknown"})`);
+    log.dim("  Enable it in Figma desktop: Preferences → Enable local MCP server");
+    log.dim("  Then open a frame and use Dev Mode in the side panel.");
+  }
+}
+
+/**
+ * Resolve the PAT for the current user. Order: env var > stored file > prompt.
+ * On `--dry-run`, prints intent without prompting or writing.
+ * On `--yes`, skips the prompt and continues without a stored token (env
+ * substitution at runtime may still work).
+ */
+async function ensurePatConfigured() {
+  const home = os.homedir();
+  const state = patResolutionState({ home, envValue: process.env.FIGMA_API_KEY });
+  if (state.source === "env") {
+    log.dim("PAT: using FIGMA_API_KEY from environment");
+    return;
+  }
+  if (state.source === "file") {
+    log.dim(`PAT: using stored token (length: ${state.value.length})`);
+    return;
+  }
+  // none — needs prompt
+  if (args.dryRun) {
+    log.dim(`[dry-run] would prompt for FIGMA_API_KEY and write ${patEnvFilePath(home)} (mode 0600)`);
+    return;
+  }
+  if (args.yes) {
+    log.warn("No FIGMA_API_KEY found. Skipping prompt (--yes). Framelink will not work until you set it.");
+    log.dim(`  Either: export FIGMA_API_KEY=… in your shell, or write the token to ${patEnvFilePath(home)}`);
+    return;
+  }
+  const token = await promptHidden("Enter Figma Personal Access Token (input hidden; Enter to skip): ");
+  if (!token) {
+    log.warn("Skipped. Framelink will not work until FIGMA_API_KEY is set.");
+    return;
+  }
+  writePatToEnvFile(home, token);
+  log.ok(`PAT stored (length: ${token.length}) at ${path.relative(home, patEnvFilePath(home))}`);
+}
+
+/**
+ * Read a line of input from stdin without echoing it to the terminal.
+ * Uses readline's `_writeToOutput` override to swallow the typed bytes.
+ *
+ * @param {string} q
+ * @returns {Promise<string>}  the entered token, trimmed, or '' on skip
+ */
+function promptHidden(q) {
+  return new Promise((resolve) => {
+    const r = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    // mute echo: swallow every character readline would emit
+    r._writeToOutput = function (s) {
+      if (s === q || s === "\r\n" || s === "\n") {
+        process.stdout.write(s);
+      }
+      // otherwise, swallow typed characters (no asterisks — avoids leaking length)
+    };
+    r.question(q, (ans) => {
+      r.close();
+      resolve((ans || "").trim());
+    });
+  });
+}
+
+/**
+ * Uninstall MCP entries from every editor's mcp.json. Optionally remove
+ * the PAT file (default: keep — explicit `y` required even in --yes mode).
+ */
+async function uninstallMcpAll(editors) {
+  log.step("Uninstall — Figma MCP entries");
+  let totalRemoved = 0;
+  for (const ed of editors) {
+    const mcpPath = resolveMcpConfigPath(ed.id, ed.userDir);
+    if (!fs.existsSync(mcpPath)) continue;
+    let mcp;
+    try { mcp = readMcpJson(mcpPath); }
+    catch (e) { log.warn(e.message); continue; }
+    const { removed } = uninstallMcpServers(mcp);
+    if (removed.length === 0) continue;
+    if (args.dryRun) {
+      log.dim(`[dry-run] would remove ${removed.join(", ")} from ${mcpPath}`);
+    } else {
+      fs.writeFileSync(mcpPath, JSON.stringify(mcp, null, 2) + "\n", "utf8");
+      log.ok(`removed ${removed.join(", ")} from ${path.basename(mcpPath)} (${ed.label})`);
+    }
+    totalRemoved += removed.length;
+  }
+  if (totalRemoved === 0) log.dim("no managed MCP entries found");
+
+  // PAT file: kept by default. Prompt once; --yes is a soft "no".
+  const home = os.homedir();
+  const patPath = patEnvFilePath(home);
+  if (!fs.existsSync(patPath)) return;
+  if (args.yes || args.dryRun) {
+    if (args.force && !args.dryRun) {
+      deletePatFile(home);
+      log.ok(`removed ${patPath}`);
+    } else if (args.force && args.dryRun) {
+      log.dim(`[dry-run] would rm ${patPath}`);
+    } else {
+      log.dim(`PAT file preserved at ${patPath} (re-run with --force to delete)`);
+    }
+    return;
+  }
+  // interactive
+  const yes = await confirm(`Also delete the PAT at ${patPath}?`, false);
+  if (yes) {
+    deletePatFile(home);
+    log.ok(`removed ${patPath}`);
+  } else {
+    log.dim(`kept ${patPath}`);
+  }
 }
 
 // ─── Utilities ─────────────────────────────────────────────────────────────
@@ -564,12 +785,13 @@ function backupOnce(p) {
 }
 
 function parseArgs(argv) {
-  const o = { yes: false, dryRun: false, force: false, uninstall: false, target: null, targetPath: null };
+  const o = { yes: false, dryRun: false, force: false, uninstall: false, target: null, targetPath: null, skipMcp: false };
   for (const a of argv) {
     if (a === "--yes" || a === "-y") o.yes = true;
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--force") o.force = true;
     else if (a === "--uninstall") o.uninstall = true;
+    else if (a === "--skip-mcp") o.skipMcp = true;
     else if (a.startsWith("--target=")) o.target = a.slice("--target=".length);
     else if (a.startsWith("--target-path=")) o.targetPath = a.slice("--target-path=".length);
     else if (a === "--help" || a === "-h") { printHelp(); process.exit(0); }
@@ -588,8 +810,17 @@ Options:
       --force            Overwrite existing files even if not managed
       --target=<id>      Editor: vscode | insiders | cursor | vscodium
       --target-path=<p>  Absolute path to a User/prompts dir (overrides detection)
+      --skip-mcp         Skip the Figma MCP server registration step
       --uninstall        Remove all files written by this installer
+                         (includes managed mcp.json entries; PAT file kept by default)
   -h, --help             Show this message
+
+The install runs two stages:
+  1. Copy skills (instructions, prompts, slash commands, personas) into
+     your editor's prompts/ directory.
+  2. Register Figma MCP servers (figma-dev-mode + figma-framelink) into
+     your editor's mcp.json. The Framelink server reads FIGMA_API_KEY
+     from \`~/.copilot-skills-pack/.env\` (mode 0600) or the shell env.
 `);
 }
 
