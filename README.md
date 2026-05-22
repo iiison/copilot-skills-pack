@@ -1,29 +1,21 @@
 # copilot-skills-pack
 
-Production-grade engineering skills for **GitHub Copilot in VS Code**, packaged as a one-command installer.
+Production-grade engineering skills for **GitHub Copilot in VS Code**,
+packaged as a one-command installer.
 
-Built on top of [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills) — this repo wires those skills into Copilot's user-level prompts folder so they're available in **every** workspace, with a sensible always-on / on-demand split.
+Two skill suites:
 
----
-
-## What you get
-
-After running the installer:
-
-| Type | Count | How it activates |
-|---|---|---|
-| Always-on instructions | 10 | Auto-applied to files matching their `applyTo` glob |
-| On-demand prompts | 10 | Attach via `#skill-name` in Copilot Chat |
-| Slash commands | 7 | Type `/spec`, `/plan`, `/build`, `/test`, `/review`, `/code-simplify`, `/ship` |
-| Chat mode personas | 3 | `code-reviewer`, `test-engineer`, `security-auditor` |
-
-All 20 underlying skills from `agent-skills` are installed — 10 are always-on (scoped by file type), 10 are loaded only when explicitly invoked, keeping Copilot's context lean.
+- **Core skills** — from
+  [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills),
+  wired into Copilot's user-level prompts so they're available in
+  **every** workspace.
+- **UI skills** — a built-in Figma → React workflow that turns a Figma
+  frame into production-grade React/Tailwind components, including
+  re-skinning of existing files behind a Preserve/Replace contract.
 
 ---
 
 ## Install
-
-**Requirements:** Node 18+ and `git` on your PATH. Works on **macOS, Windows, and Linux**.
 
 ```bash
 git clone https://github.com/iiison/copilot-skills-pack.git
@@ -31,125 +23,132 @@ cd copilot-skills-pack
 node setup.mjs
 ```
 
-That's it. Reload your editor window and the skills are live.
+Requirements: **Node 18+** and **git** on your PATH. Works on macOS,
+Windows, and Linux.
 
-> **New to this?** Read **[HOW_TO_USE.md](./HOW_TO_USE.md)** for a full walkthrough from idea to ship, with prompt templates for each step.
-
-### Options
-
-```bash
-node setup.mjs --dry-run          # preview what will be written
-node setup.mjs --yes              # non-interactive (accept defaults)
-node setup.mjs --force            # overwrite non-managed files
-node setup.mjs --target=insiders  # install into VS Code Insiders
-node setup.mjs --target=cursor    # install into Cursor
-node setup.mjs --target-path=/abs/path/to/User/prompts
-node setup.mjs --uninstall        # remove every file this installer wrote
-```
-
-The installer auto-detects VS Code, VS Code Insiders, Cursor, and VSCodium. If multiple are present, it asks which one to target.
+> Full step-by-step (including the Figma PAT for UI skills, and per-OS
+> Node/git install) → **[docs/INSTALL.md](./docs/INSTALL.md)**.
 
 ---
 
-## Usage
+## What you get
 
-### Slash commands (lifecycle workflow)
+After the install + an editor reload:
 
-In Copilot Chat, type `/`:
+| Surface | Count | Activated by |
+|---|---|---|
+| Always-on instructions | 11 | Matching `applyTo` glob — silent |
+| On-demand prompts | 10 | `#name` in chat |
+| Slash commands | 14 | Type `/` in Copilot Chat |
+| Chat-mode personas | 4 | Mode dropdown at top of chat panel |
 
-| Command | Use when |
-|---|---|
-| `/spec` | Defining what to build (PRD-style) |
-| `/plan` | Breaking a spec into atomic tasks |
-| `/build` | Implementing a task in vertical slices |
-| `/test` | Adding tests / validating behavior |
-| `/review` | Five-axis review of a diff |
-| `/code-simplify` | Reducing complexity while preserving behavior |
-| `/ship` | Pre-launch checklist + rollout |
-
-### Chat mode personas
-
-Pick from the chat mode dropdown:
-
-- **code-reviewer** — Senior staff engineer review standard
-- **test-engineer** — Coverage analysis + Prove-It pattern
-- **security-auditor** — OWASP / threat-modeling lens
-
-### Always-on skills (auto-apply by file type)
-
-| Skill | Applies to |
-|---|---|
-| `incremental-implementation` | every file |
-| `git-workflow-and-versioning` | every file |
-| `code-review-and-quality` | every file |
-| `debugging-and-error-recovery` | every file |
-| `test-driven-development` | `*.{ts,tsx,js,jsx,mjs,cjs}` |
-| `frontend-ui-engineering` | `*.{tsx,jsx,css,scss,less}` |
-| `security-and-hardening` | `**/api/**`, `**/auth/**`, `middleware*.*` |
-| `spec-driven-development` | `*.md` |
-| `planning-and-task-breakdown` | `*.md` |
-| `documentation-and-adrs` | `*.md` |
-
-### On-demand skills (attach via `#`)
-
-In Copilot Chat, type `#` and pick:
+Slash commands break down as:
 
 ```
-idea-refine                source-driven-development    api-and-interface-design
-context-engineering        browser-testing-with-devtools  code-simplification
-performance-optimization   ci-cd-and-automation         deprecation-and-migration
-shipping-and-launch
+Core lifecycle (7):  /spec  /plan  /build  /test  /review  /code-simplify  /ship
+UI workflow (7):     /ui-learn  /ui-mcp-status  /ui-refine  /ui-spec
+                     /ui-plan   /ui-build       /ui-flag
 ```
+
+Chat-mode personas: `code-reviewer`, `test-engineer`,
+`security-auditor`, `frontend-craftsman`.
+
+---
+
+## Docs
+
+| Doc | When to read |
+|---|---|
+| **[docs/INSTALL.md](./docs/INSTALL.md)** | First-time setup, OS-specific steps, Figma PAT, troubleshooting installs |
+| **[docs/SKILLS_CORE.md](./docs/SKILLS_CORE.md)** | Spec → plan → build → ship lifecycle, slash commands, personas, prompt-writing rules |
+| **[docs/SKILLS_UI.md](./docs/SKILLS_UI.md)** | Figma → React workflow, new-repo vs existing-repo setup, the `frontend-craftsman` persona, re-skin mode in depth |
+
+---
+
+## Quick examples
+
+### Core lifecycle
+
+```
+/spec   Feature: CSV export. Reference: #file:app/api/exports/route.ts
+/plan   Spec: #file:docs/exports/SPEC.md
+/build  task 1 from #file:docs/exports/PLAN.md
+/review my staged changes against #file:docs/exports/SPEC.md
+```
+
+### Figma → React (from scratch)
+
+```
+/ui-learn                              # one-time per repo
+/ui-refine https://figma.com/file/...
+/ui-spec
+/ui-plan
+/ui-build
+```
+
+### Figma → React (re-skin existing file)
+
+```
+/ui-refine https://figma.com/file/... --target=app/pricing/page.tsx
+/ui-spec                               # produces & gets you to approve
+                                       # the Preserve/Replace contract
+/ui-plan
+/ui-build                              # post-emit self-check enforces
+                                       # the contract
+```
+
+Walk-throughs and prompt templates live in
+[docs/SKILLS_UI.md](./docs/SKILLS_UI.md).
 
 ---
 
 ## Customize
 
-Edit [`skills.config.json`](./skills.config.json) and re-run `node setup.mjs`. You can:
+Edit [`skills.config.json`](./skills.config.json) and re-run
+`node setup.mjs`. You can:
 
 - Move a skill between `alwaysOn` and `onDemand`
 - Tighten / loosen any `applyTo` glob to fit your stack
 - Add or remove personas
-- Pin a different ref of `addyosmani/agent-skills` via `source.ref`
+- Pin a different ref of `addyosmani/agent-skills` via `sources[].ref`
 
-The config is the only file your team needs to fork to opinionate the pack for their stack.
-
----
-
-## Update
-
-```bash
-cd copilot-skills-pack
-git pull
-node setup.mjs --yes
-```
-
-The installer re-clones the upstream skills source into `.cache/agent-skills/` (gitignored) and rewrites only files it manages (marked with `<!-- managed-by: copilot-skills-pack -->`).
+The config is the only file your team needs to fork to opinionate the
+pack for their stack.
 
 ---
 
-## Uninstall
+## Update / uninstall
 
 ```bash
+# Update
+cd copilot-skills-pack && git pull && node setup.mjs --yes
+
+# Uninstall (only removes files this installer wrote)
 node setup.mjs --uninstall
 ```
-
-Removes only the files this installer wrote (identified by the marker comment). Your other prompts stay untouched. A backup of `settings.json` is saved as `settings.json.bak.copilot-skills-pack` the first time it's patched.
 
 ---
 
 ## How it works
 
-1. Clones `addyosmani/agent-skills` into `.cache/agent-skills/` (shallow).
-2. For each skill in `skills.config.json`, reads its `SKILL.md`, strips the upstream frontmatter, and writes it back with Copilot-flavored frontmatter:
+1. Clones each `git` source (e.g. `addyosmani/agent-skills`) into
+   `.cache/sources/<id>/` (shallow). The UI skill pack ships from the
+   `local` source — files in [`local-skills/`](./local-skills/).
+2. For each skill in `skills.config.json`, reads its `SKILL.md` (or
+   persona file), strips its upstream frontmatter, and writes it back
+   with Copilot-flavored frontmatter:
    - `*.instructions.md` for always-on (with `applyTo`)
    - `*.prompt.md` for on-demand and slash commands
    - `*.chatmode.md` for personas
-3. Patches your VS Code user `settings.json` to set `"chat.promptFiles": true`.
+3. Patches your VS Code user `settings.json` to set
+   `"chat.promptFiles": true`.
+4. (If you opt in) Installs the pinned `figma-developer-mcp` package,
+   prompts for a Figma PAT, and registers the `figma-dev-mode` +
+   `figma-framelink` MCP servers in your editor's `mcp.json`.
 
-Per-OS install paths:
+Per-OS prompt paths:
 
-| OS | Path |
+| OS | `User/prompts/` |
 |---|---|
 | macOS | `~/Library/Application Support/Code/User/prompts/` |
 | Windows | `%APPDATA%\Code\User\prompts\` |
@@ -159,8 +158,10 @@ Per-OS install paths:
 
 ## Credits
 
-- Skills, personas, and slash commands © [Addy Osmani](https://github.com/addyosmani) and contributors — [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills) (MIT)
-- Installer and configuration © 2026 [iiison](https://github.com/iiison) (MIT)
+- Core skills, personas, and lifecycle slash commands © [Addy Osmani](https://github.com/addyosmani)
+  and contributors — [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills) (MIT).
+- UI skills (`ui-*`, `frontend-craftsman`), installer, MCP integration,
+  and configuration © 2026 [iiison](https://github.com/iiison) (MIT).
 
 ## License
 
