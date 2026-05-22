@@ -406,9 +406,13 @@ function installPersonas(items, targetDir, sources) {
     }
     const body = stripFrontmatter(fs.readFileSync(src, "utf8"));
     const out = path.join(targetDir, `${item.name}.chatmode.md`);
+    const toolsLine = Array.isArray(item.tools)
+      ? `tools: [${item.tools.map((t) => JSON.stringify(t)).join(", ")}]\n`
+      : "";
     const content =
       `---\n` +
       `description: ${JSON.stringify(`Persona: ${item.name}`)}\n` +
+      toolsLine +
       `---\n${MARKER}\n\n${body.trim()}\n`;
     if (writeManaged(out, content)) written.push(out);
   }

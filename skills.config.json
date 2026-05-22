@@ -184,7 +184,8 @@
   "personas": [
     {
       "name": "code-reviewer",
-      "source": "upstream"
+      "source": "upstream",
+      "tools": ["codebase", "search", "searchResults", "usages", "findTestFiles", "problems", "githubRepo", "fetch"]
     },
     {
       "name": "test-engineer",
@@ -192,11 +193,13 @@
     },
     {
       "name": "security-auditor",
-      "source": "upstream"
+      "source": "upstream",
+      "tools": ["codebase", "search", "searchResults", "usages", "findTestFiles", "problems", "githubRepo", "fetch"]
     },
     {
       "name": "frontend-craftsman",
-      "source": "local"
+      "source": "local",
+      "tools": ["codebase", "search", "searchResults", "usages", "findTestFiles", "problems", "fetch"]
     }
   ]
 }
