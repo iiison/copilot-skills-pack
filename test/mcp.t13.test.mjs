@@ -5,11 +5,11 @@ import { buildMcpEntries, registerMcpServers, MANAGED_SENTINEL } from "../lib/mc
 
 const FRAMELINK_CLI = "/repo/node_modules/figma-developer-mcp/dist/bin.js";
 
-test("buildMcpEntries: figma-dev-mode is SSE on 127.0.0.1:3845", () => {
+test("buildMcpEntries: figma-dev-mode uses Streamable HTTP on 127.0.0.1:3845/mcp", () => {
   const e = buildMcpEntries(FRAMELINK_CLI);
   assert.deepEqual(e["figma-dev-mode"], {
-    type: "sse",
-    url: "http://127.0.0.1:3845/sse",
+    type: "http",
+    url: "http://127.0.0.1:3845/mcp",
     _managedBy: MANAGED_SENTINEL,
   });
 });

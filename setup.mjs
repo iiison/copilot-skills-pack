@@ -626,7 +626,7 @@ async function installMcp(editor) {
   await ensurePatConfigured();
 
   // 5. Probe Dev Mode (non-fatal).
-  const probe = await probeDevMode("http://127.0.0.1:3845/sse", { timeoutMs: 3000 });
+  const probe = await probeDevMode("http://127.0.0.1:3845/mcp", { timeoutMs: 3000 });
   if (probe.reachable) {
     log.ok("Figma Dev Mode MCP reachable");
   } else {
