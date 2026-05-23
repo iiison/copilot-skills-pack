@@ -41,8 +41,29 @@ mode) draft a Preserve/Replace contract that `/ui-spec` will finalize.
    > code instead of generating from scratch. Pass `--task=<N>` to
    > `/ui-build` to jump to a specific task in the plan."*
 
-2. **Fetch phase.** Call Figma MCP to retrieve the frame. Capture:
-   node tree, Variables, component instances, auto-layout metadata.
+2. **Fetch phase.** Call the Figma MCP tools in the order below and
+   record the results in memory before drafting any narrative. **Do
+   not skip these calls** — the measurement sections of Appendix B
+   are populated *from these responses*, not from the Figma viewer or
+   inferred Tailwind scale steps.
+
+   | # | Tool | Required? | What to extract |
+   |---|---|---|---|
+   | 1 | `get_design_context(nodeId)` | **required** | Subtree: node names + types, **bounding boxes (px)**, `layoutMode`, `paddingLeft/Top/Right/Bottom`, `itemSpacing`, `primaryAxisAlignItems`, `counterAxisAlignItems`, **fills (hex)**, text style refs, **corner radii**, **stroke weights**, **effects (shadows / blurs)**, component instance refs. |
+   | 2 | `get_variable_defs(nodeId)` | **required** | Every Figma Variable in scope resolved to its raw value (color hex, spacing px, typography object). Use this to populate the Tokens table. |
+   | 3 | `get_screenshot(nodeId)` | recommended | PNG of the frame, kept only for visual sanity. **Never measure pixels off the screenshot** — always use values from tool #1. |
+   | 4 | `get_metadata(nodeId)` | only if needed | Use when `get_design_context` truncates a large subtree; this returns IDs + bounding boxes only. |
+
+   **Halt rule:** if `get_design_context` was not called (or returned
+   no data), halt and recommend `/ui-mcp-status`. Do not proceed with
+   inferred values.
+
+   **Tool name discovery:** the tool prefix varies by MCP server build
+   (e.g. `mcp_figma-dev-mode_get_design_context`). If the literal names
+   above are not present, run a `tools/list` lookup and match by
+   suffix; record the active names in session state under
+   `inProgress.workflows[<slug>].mcpToolMap`.
+
    If only Framelink is available, emit once:
 
    > *"Framelink fallback active — Component instance and Variables
@@ -148,14 +169,20 @@ Agent: Logged. Refinement saved to docs/ui/refinements/pricing-page.md.
 
 ## Honest constraints
 
-- The Figma MCP tool surface varies by upstream version. Discover tools
-  via the standard MCP `tools/list` request rather than hard-coding tool
-  names. If Variables/instance tools aren't exposed by the active
-  server, degrade to layout-only output and warn the developer.
+- The Figma MCP tool surface varies by upstream version. The Behavior
+  section above pins the canonical Dev Mode tool names; on a server
+  build that uses different names, fall back to a `tools/list` lookup
+  and match by suffix (`*get_design_context`, `*get_variable_defs`,
+  etc.). If `get_design_context` is unavailable on the active server,
+  degrade to layout-only output and warn the developer — do **not**
+  silently substitute inferred values.
 - Branch enumeration in re-skin mode is **LLM reasoning over the file's
   text**, not an AST parse. Surface the enumerated list explicitly so
   the developer can spot omissions; do not summarize away the table.
-
+- The Appendix B measurement tables are mandatory output, not optional.
+  Empty cells must be filled with `?` (and a note explaining why the
+  tool response lacked that field) so `/ui-spec` can detect gaps
+  before code is generated.
 ---
 
 ## Appendix A — Slug definition
@@ -205,6 +232,50 @@ in from-scratch refinements.
 |---|---|---|---|
 | 12:45 | "Submit CTA" | `Button` | direct instance |
 | 12:67 | "Most Popular badge" | `Badge` | substituted from raw rectangle (deviation #1) |
+
+## Frame Geometry
+
+Measured values from `get_design_context`. Use `?` if a property
+wasn't returned, with a brief note in the row.
+
+| Property | Value |
+|---|---|
+| Width × Height | 1440 × 56 px |
+| Background | `#FFFFFF` (token: `bg/bg-default`) |
+| Border | 1px solid `#E5E7EB` (token: `border/border-subtle`) |
+| Corner radius | 0 |
+
+## Auto-layout (per container)
+
+One row per Figma node that has `layoutMode != NONE`. Values are raw
+from the MCP response.
+
+| Node (id) | layoutMode | padding L/T/R/B | itemSpacing | primaryAxisAlign | counterAxisAlign |
+|---|---|---|---|---|---|
+| DashboardHeader (12:01) | HORIZONTAL | 24 / 12 / 24 / 12 | 12 | SPACE_BETWEEN | CENTER |
+| Breadcrumbs (12:05)     | HORIZONTAL | 0 / 0 / 0 / 0     | 8  | MIN           | CENTER |
+
+## Typography (per text node)
+
+| Node (id) | Font | Size / LH | Weight | Letter-spacing | Token (if any) |
+|---|---|---|---|---|---|
+| Title (12:10) | Inter | 14 / 20 | 600 | -0.005em | `text/heading/sm` |
+
+## Tokens used (resolved from `get_variable_defs`)
+
+| Token | Raw value |
+|---|---|
+| `bg/bg-default` | `#FFFFFF` |
+| `border/border-subtle` | `#E5E7EB` |
+| `spacing/3` | 12 |
+| `text/heading/sm` | Inter 14/20 600 |
+
+## Effects
+
+| Node (id) | Type | Value |
+|---|---|---|
+| FavoriteButton (12:20) | shadow (hover) | `0 1 2 rgba(0,0,0,0.08)` |
+| Container (12:01) | corner radius | 0 |
 
 ## Deviations
 

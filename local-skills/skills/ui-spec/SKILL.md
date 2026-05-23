@@ -38,10 +38,25 @@ contract that `/ui-build` will read from disk before generating.
      those expressed in Figma**. Do not invent states.
    - **Tokens used** — mapped from Figma Variables to the guide's
      Token Map.
+   - **Measurements snapshot** — a short table copied from the
+     refinement's Frame Geometry / Auto-layout / Typography / Effects
+     sections, scoped to this component's nodes. This is the **source
+     of truth** for the Tailwind translation in the next bullet.
+   - **Tailwind translation** — the resolved Tailwind classes derived
+     from the Measurements snapshot above. Every class must be
+     traceable to a measured value (e.g. `px-6 py-3` from
+     `paddingL/R=24, paddingT/B=12`). Mark any class as `(inferred)`
+     if it does not come from a measurement, and explain why in a
+     trailing note. The default expectation is **zero** `(inferred)`
+     classes.
    - **Reuse declaration** — list of existing components it imports.
    - **Accessibility notes** — semantic element (`<button>` vs
      `<div role="button">`), required ARIA, keyboard interactions.
 
+   **Halt rule:** if the refinement's measurement tables are missing
+   or contain `?` cells for properties that affect layout (paddings,
+   itemSpacing, dimensions), halt and ask the developer to re-run
+   `/ui-refine` so the values are captured from MCP. Do not guess.
 4. **From-scratch mode:** emit the specs and skip steps 5–6.
 
 5. **Re-skin mode (additional steps).**
@@ -131,6 +146,9 @@ Agent: Contract saved to docs/ui/contracts/pricing-page.md.
 - Never paraphrase a `PRESERVE` range away. Quote the original snippet
   in the contract so `/ui-build`'s post-emit self-check has a textual
   anchor.
+- Tailwind class choices must be traceable to a measured value from the
+  refinement's Measurements tables. If a value is missing, halt and
+  ask for a `/ui-refine` re-run instead of guessing a scale step.
 
 ---
 
