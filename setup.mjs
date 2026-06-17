@@ -10,7 +10,8 @@
  *   node setup.mjs --yes          # non-interactive, accept defaults
  *   node setup.mjs --dry-run      # show what would happen, write nothing
  *   node setup.mjs --force        # overwrite existing files without asking
- *   node setup.mjs --target=cursor   # install into Cursor instead of VS Code
+ *   node setup.mjs --target=cursor   # install Copilot prompt files into Cursor
+ *   node setup.mjs --target=cursor-native # install native Cursor skills (~/.cursor/skills)
  *   node setup.mjs --target=insiders # install into VS Code Insiders
  *   node setup.mjs --uninstall    # remove all files this script installed
  *
@@ -75,6 +76,12 @@ const log = {
 
     requireGit();
     const config = loadConfig();
+
+    if (args.target === "cursor-native") {
+      await installCursorNative(config);
+      return;
+    }
+
     const choice = await resolveTargetDir();
     const targetDir = choice.promptsDir;
     log.info(`Target prompts dir: ${paint(c.bold, targetDir)}`);
@@ -419,6 +426,207 @@ function installPersonas(items, targetDir, sources) {
   return written;
 }
 
+// ─── Cursor-native install (--target=cursor-native) ─────────────────────────
+
+/**
+ * Absolute path to the user-level Cursor skills directory. Each skill lives in
+ * its own folder as `<skillsDir>/<name>/SKILL.md`, which is how Cursor's native
+ * agent discovers skills and surfaces them under `/`.
+ */
+function cursorSkillsDir() {
+  return path.join(os.homedir(), ".cursor", "skills");
+}
+
+/** Cursor's `User` dir if present (for MCP logging); falls back to $HOME. */
+function cursorUserDir() {
+  const home = os.homedir();
+  for (const p of vsUserDirs(home, "Cursor")) if (fs.existsSync(p)) return p;
+  return home;
+}
+
+/**
+ * Install skills as Cursor-native `SKILL.md` files under `~/.cursor/skills/`.
+ *
+ * Mapping from the Copilot-oriented config to native skills:
+ *   - alwaysOn      → skill (model-invocable); `applyTo` globs → native `paths`
+ *   - onDemand      → skill (model-invocable)
+ *   - slashCommands → skill with `disable-model-invocation: true` (pure `/`)
+ *   - personas      → skipped (no native 1:1 in Cursor)
+ *
+ * All categories appear under `/` in Agent chat; the disable flag only changes
+ * whether the agent may also auto-apply the skill from ambient context.
+ */
+async function installCursorNative(config) {
+  const skillsDir = cursorSkillsDir();
+  log.info(`Target skills dir: ${paint(c.bold, skillsDir)}`);
+
+  if (!args.yes && !args.dryRun) {
+    const ok = await confirm(`Proceed with install into the folder above?`, true);
+    if (!ok) return log.warn("Aborted.");
+  }
+
+  migrateCacheLayout();
+  syncAllGitSources(config.sources);
+  ensureDir(skillsDir);
+
+  const written = [];
+  written.push(...installNativeSkillsFromSkillMd(config.alwaysOn, skillsDir, config.sources, "always-on", { usePaths: true }));
+  written.push(...installNativeSkillsFromSkillMd(config.onDemand, skillsDir, config.sources, "on-demand", {}));
+  written.push(...installNativeSlashCommands(config.slashCommands, skillsDir, config.sources));
+
+  if (Array.isArray(config.personas) && config.personas.length) {
+    log.step(`Personas (${config.personas.length})`);
+    log.dim(`skipped — no native Cursor equivalent: ${config.personas.map((p) => p.name).join(", ")}`);
+  }
+
+  if (!args.skipMcp) {
+    await installMcp({ id: "cursor", label: "Cursor", userDir: cursorUserDir() });
+  } else {
+    log.dim("MCP install skipped: --skip-mcp");
+  }
+
+  log.step("Done");
+  log.ok(`${written.length} skills ${args.dryRun ? "would be" : ""} written into ${skillsDir}`);
+  if (args.dryRun) log.dim("(--dry-run: no files were actually written)");
+  printNativeNextSteps(config);
+}
+
+/**
+ * Write native skills sourced from `skills/<name>/SKILL.md` (alwaysOn/onDemand).
+ * When `usePaths` is set, the item's `applyTo` glob(s) are mapped to the native
+ * `paths` frontmatter so the skill is surfaced for matching files.
+ */
+function installNativeSkillsFromSkillMd(items, skillsDir, sources, label, { usePaths = false } = {}) {
+  log.step(`${label} skills (${items.length})`);
+  warnOnCollisions(items, label);
+  const written = [];
+  for (const item of items) {
+    const sourceDir = safeResolveSource(sources, item.source, `${label} '${item.name}'`);
+    if (!sourceDir) continue;
+    const src = path.join(sourceDir, "skills", item.name, "SKILL.md");
+    if (!fs.existsSync(src)) {
+      log.warn(`skip ${item.name}: ${path.relative(ROOT, src)} not found`);
+      continue;
+    }
+    const raw = fs.readFileSync(src, "utf8");
+    const meta = readSkillMeta(raw);
+    const body = stripFrontmatter(raw);
+    const description = meta.description || item.note || `${label} skill: ${item.name}`;
+    const content = buildNativeSkill(item.name, description, body, {
+      paths: usePaths ? applyToToPaths(item.applyTo) : null,
+    });
+    const out = path.join(skillsDir, item.name, "SKILL.md");
+    if (writeManaged(out, content)) written.push(out);
+  }
+  return written;
+}
+
+/**
+ * Write native skills for slash commands. These get `disable-model-invocation:
+ * true` so they behave like classic slash commands: invoked only via `/name`,
+ * never auto-applied from context.
+ */
+function installNativeSlashCommands(items, skillsDir, sources) {
+  log.step(`slash command skills (${items.length})`);
+  warnOnCollisions(items, "slash command");
+  const written = [];
+  for (const item of items) {
+    const src = resolveSlashCommandFile(sources, item);
+    if (!src) {
+      log.warn(`skip /${item.name}: command file not found`);
+      continue;
+    }
+    const raw = fs.readFileSync(src, "utf8");
+    const meta = readSkillMeta(raw);
+    const body = stripFrontmatter(raw);
+    const description =
+      meta.description ||
+      `Run the /${item.name} workflow. Use when the user types /${item.name} or asks to ${item.name.replace(/-/g, " ")}.`;
+    const content = buildNativeSkill(item.name, description, body, { disableModelInvocation: true });
+    const out = path.join(skillsDir, item.name, "SKILL.md");
+    if (writeManaged(out, content)) written.push(out);
+  }
+  return written;
+}
+
+/**
+ * Build a Cursor-native SKILL.md: YAML frontmatter (`name`, `description`,
+ * optional `paths`, optional `disable-model-invocation`) followed by the
+ * managed-by marker and the skill body.
+ */
+function buildNativeSkill(name, description, body, { disableModelInvocation = false, paths = null } = {}) {
+  let fm = `---\n`;
+  fm += `name: ${name}\n`;
+  fm += `description: ${JSON.stringify(description)}\n`;
+  if (Array.isArray(paths) && paths.length) {
+    fm += `paths: [${paths.map((p) => JSON.stringify(p)).join(", ")}]\n`;
+  }
+  if (disableModelInvocation) fm += `disable-model-invocation: true\n`;
+  fm += `---\n`;
+  return `${fm}${MARKER}\n\n${body.trim()}\n`;
+}
+
+/**
+ * Map a Copilot `applyTo` value (string or array of globs) to native `paths`.
+ * The catch-all glob (matches everything) is dropped so those skills stay
+ * generally available rather than being path-scoped to "everything".
+ */
+function applyToToPaths(applyTo) {
+  if (!applyTo) return null;
+  const arr = Array.isArray(applyTo) ? applyTo : [applyTo];
+  const filtered = arr.filter((g) => g && g !== "**" && g !== "**/*");
+  return filtered.length ? filtered : null;
+}
+
+/**
+ * Loosely parse `name`/`description` from a SKILL.md's YAML frontmatter so we
+ * can reuse the upstream description (better `/` discovery). Handles inline
+ * scalars, quoted values, and block scalars (`>`, `>-`, `|`, or empty value
+ * followed by indented lines). Not a full YAML parser — just these fields.
+ */
+function readSkillMeta(raw) {
+  const meta = {};
+  if (!raw.startsWith("---")) return meta;
+  const end = raw.indexOf("\n---", 3);
+  if (end === -1) return meta;
+  const lines = raw.slice(3, end).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!m) continue;
+    const key = m[1];
+    if (key !== "name" && key !== "description") continue;
+    let val = m[2].trim();
+    if (val === "" || val === ">" || val === ">-" || val === "|" || val === "|-") {
+      const collected = [];
+      for (let j = i + 1; j < lines.length; j++) {
+        if (/^\s+\S/.test(lines[j])) collected.push(lines[j].trim());
+        else break;
+      }
+      if (collected.length) val = collected.join(" ");
+    }
+    val = val.replace(/^["']|["']$/g, "").trim();
+    if (val && !meta[key]) meta[key] = val;
+  }
+  return meta;
+}
+
+function printNativeNextSteps(config) {
+  const slashList = config.slashCommands.map((s) => `/${s.name}`).join("  ");
+  console.log(`
+${paint(c.bold, "Next steps:")}
+  1. Reload Cursor (Cmd/Ctrl+Shift+P → "Developer: Reload Window").
+  2. In Agent chat, type "/" to see your skills, e.g.:
+       ${slashList}
+  3. Slash-command skills are invoked explicitly (disable-model-invocation: true).
+     Always-on / on-demand skills are auto-applied by the agent when relevant,
+     and still selectable from "/".
+  4. Personas were skipped — Cursor has no file-based equivalent.
+
+${paint(c.dim, "Update later: git pull && node setup.mjs --target=cursor-native --yes")}
+${paint(c.dim, "Uninstall:    node setup.mjs --uninstall")}
+`);
+}
+
 /**
  * Slash-command file resolution diverges by source type:
  *   - git   → `<sourceDir>/.claude/commands/<name>.md` then `.gemini/commands/<name>.md`
@@ -543,8 +751,40 @@ async function uninstall() {
       } catch { /* ignore */ }
     }
   }
+  total += uninstallCursorNativeSkills();
   log.ok(`${total} managed files ${args.dryRun ? "would be" : ""} removed`);
-  await uninstallMcpAll(candidates);
+
+  // Cursor-native installs write MCP to ~/.cursor/mcp.json even when no Cursor
+  // `User` dir was discovered; ensure that path is cleaned too.
+  const mcpEditors = [...candidates];
+  if (!mcpEditors.some((e) => e.id === "cursor") &&
+      fs.existsSync(path.join(os.homedir(), ".cursor", "mcp.json"))) {
+    mcpEditors.push({ id: "cursor", label: "Cursor", userDir: os.homedir() });
+  }
+  await uninstallMcpAll(mcpEditors);
+}
+
+/**
+ * Remove managed native skills (`~/.cursor/skills/<name>/SKILL.md` carrying the
+ * managed-by marker). Deletes the whole skill folder. Returns the count.
+ */
+function uninstallCursorNativeSkills() {
+  const skillsDir = cursorSkillsDir();
+  if (!fs.existsSync(skillsDir)) return 0;
+  let count = 0;
+  for (const entry of fs.readdirSync(skillsDir)) {
+    const skillDir = path.join(skillsDir, entry);
+    const skillMd = path.join(skillDir, "SKILL.md");
+    if (!fs.existsSync(skillMd)) continue;
+    try {
+      if (!fs.readFileSync(skillMd, "utf8").includes(MARKER)) continue;
+      if (args.dryRun) log.dim(`[dry-run] rm -r ${skillDir}`);
+      else fs.rmSync(skillDir, { recursive: true, force: true });
+      count++;
+    } catch { /* ignore */ }
+  }
+  if (count) log.dim(`${count} native Cursor skill folder(s) ${args.dryRun ? "would be" : ""} removed from ${skillsDir}`);
+  return count;
 }
 
 // ─── MCP installation (T11–T17) ────────────────────────────────────────────
@@ -813,6 +1053,8 @@ Options:
       --dry-run          Show what would happen; write nothing
       --force            Overwrite existing files even if not managed
       --target=<id>      Editor: vscode | insiders | cursor | vscodium
+                         | cursor-native (write native Cursor skills to
+                         ~/.cursor/skills, visible under "/" in Agent chat)
       --target-path=<p>  Absolute path to a User/prompts dir (overrides detection)
       --skip-mcp         Skip the Figma MCP server registration step
       --uninstall        Remove all files written by this installer
