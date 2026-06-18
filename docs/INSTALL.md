@@ -155,7 +155,7 @@ Then verify:
 
 | Surface | How to check |
 |---|---|
-| Slash commands | Type `/` in Copilot Chat. You should see `/spec`, `/plan`, `/build`, …, plus `/ui-*` if you opted in to UI. |
+| Slash commands | Type `/` in Copilot Chat. You should see `/spec`, `/plan`, `/implement`, …, plus `/ui-*` if you opted in to UI. |
 | Chat modes | Click the mode dropdown at the top of the chat panel. `code-reviewer`, `test-engineer`, `security-auditor`, `frontend-craftsman` (if UI installed) should appear. |
 | Always-on instructions | Open a `.tsx` file, start a chat, expand "Used N references" under the reply. The `.instructions.md` files should be listed. |
 

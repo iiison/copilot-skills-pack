@@ -387,7 +387,7 @@ function installSlashCommands(items, targetDir, sources) {
       log.warn(`skip /${item.name}: command file not found`);
       continue;
     }
-    const body = stripFrontmatter(fs.readFileSync(src, "utf8"));
+    const body = renameCommandInBody(stripFrontmatter(fs.readFileSync(src, "utf8")), item);
     const out = path.join(targetDir, `${item.name}.prompt.md`);
     const content =
       `---\n` +
@@ -538,7 +538,7 @@ function installNativeSlashCommands(items, skillsDir, sources) {
     }
     const raw = fs.readFileSync(src, "utf8");
     const meta = readSkillMeta(raw);
-    const body = stripFrontmatter(raw);
+    const body = renameCommandInBody(stripFrontmatter(raw), item);
     const description =
       meta.description ||
       `Run the /${item.name} workflow. Use when the user types /${item.name} or asks to ${item.name.replace(/-/g, " ")}.`;
@@ -557,7 +557,7 @@ function installNativeSlashCommands(items, skillsDir, sources) {
 function buildNativeSkill(name, description, body, { disableModelInvocation = false, paths = null } = {}) {
   let fm = `---\n`;
   fm += `name: ${name}\n`;
-  fm += `description: ${JSON.stringify(description)}\n`;
+  fm += `description: ${yamlQuote(description)}\n`;
   if (Array.isArray(paths) && paths.length) {
     fm += `paths: [${paths.map((p) => JSON.stringify(p)).join(", ")}]\n`;
   }
@@ -629,23 +629,42 @@ ${paint(c.dim, "Uninstall:    node setup.mjs --uninstall")}
 
 /**
  * Slash-command file resolution diverges by source type:
- *   - git   → `<sourceDir>/.claude/commands/<name>.md` then `.gemini/commands/<name>.md`
- *   - local → `<sourceDir>/skills/<name>/SKILL.md`
+ *   - git   → `<sourceDir>/.claude/commands/<file>.md` then `.gemini/commands/<file>.md`
+ *   - local → `<sourceDir>/skills/<file>/SKILL.md`
+ *
+ * `<file>` defaults to `item.name` but can be overridden via `item.sourceFile`,
+ * which lets a command be exposed under a different `/name` than its upstream
+ * filename (e.g. read upstream `build.md` but install it as `/implement`, since
+ * Cursor's slash menu filters out the reserved/generic name `build`).
  */
 function resolveSlashCommandFile(sources, item) {
   const sourceDir = safeResolveSource(sources, item.source, `/${item.name}`);
   if (!sourceDir) return null;
+  const fileBase = item.sourceFile || item.name;
   const src = sources.find((s) => s.id === item.source);
   if (src && src.type === "local") {
-    const p = path.join(sourceDir, "skills", item.name, "SKILL.md");
+    const p = path.join(sourceDir, "skills", fileBase, "SKILL.md");
     return fs.existsSync(p) ? p : null;
   }
   // git (and any future remote type): preserve the upstream fallback chain
   const candidates = [
-    path.join(sourceDir, ".claude", "commands", `${item.name}.md`),
-    path.join(sourceDir, ".gemini", "commands", `${item.name}.md`),
+    path.join(sourceDir, ".claude", "commands", `${fileBase}.md`),
+    path.join(sourceDir, ".gemini", "commands", `${fileBase}.md`),
   ];
   return candidates.find((p) => fs.existsSync(p)) || null;
+}
+
+/**
+ * When a slash command is exposed under a different name than its upstream
+ * filename (`sourceFile` !== `name`), the upstream body still self-references
+ * the old `/sourceFile`. Rewrite those whole-word slash references to `/name`
+ * so the installed command is internally consistent (e.g. `/build` → `/implement`).
+ * No-op when `sourceFile` is absent or equal to `name`.
+ */
+function renameCommandInBody(body, item) {
+  if (!item.sourceFile || item.sourceFile === item.name) return body;
+  const escaped = item.sourceFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return body.replace(new RegExp(`/${escaped}\\b`, "g"), `/${item.name}`);
 }
 
 /**Warn when the same name appears in multiple entries of the same array.
@@ -987,6 +1006,23 @@ async function uninstallMcpAll(editors) {
 }
 
 // ─── Utilities ─────────────────────────────────────────────────────────────
+/**
+ * Quote a string for YAML frontmatter in a way Cursor's slash-menu parser
+ * accepts. That parser rejects double-quoted scalars containing `\"` escapes
+ * (which `JSON.stringify` produces), silently dropping the skill from `/`.
+ *
+ *   - No embedded double quote → emit a double-quoted scalar (JSON.stringify).
+ *     This matches the format every working command already uses, so values
+ *     without quotes are unchanged.
+ *   - Contains a double quote → emit a single-quoted scalar, which never uses
+ *     backslash escapes (a literal single quote is doubled as `''`).
+ */
+function yamlQuote(s) {
+  const str = String(s);
+  if (!str.includes('"')) return JSON.stringify(str);
+  return `'${str.replace(/'/g, "''")}'`;
+}
+
 function stripFrontmatter(s) {
   if (!s.startsWith("---")) return s;
   const end = s.indexOf("\n---", 3);

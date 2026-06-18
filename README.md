@@ -45,7 +45,7 @@ After the install + an editor reload:
 Slash commands break down as:
 
 ```
-Core lifecycle (7):  /spec  /plan  /build  /test  /review  /code-simplify  /ship
+Core lifecycle (7):  /spec  /plan  /implement  /test  /review  /code-simplify  /ship
 UI workflow (7):     /ui-learn  /ui-mcp-status  /ui-refine  /ui-spec
                      /ui-plan   /ui-build       /ui-flag
 ```
@@ -70,9 +70,9 @@ Chat-mode personas: `code-reviewer`, `test-engineer`,
 ### Core lifecycle
 
 ```
-/spec   Feature: CSV export. Reference: #file:app/api/exports/route.ts
-/plan   Spec: #file:docs/exports/SPEC.md
-/build  task 1 from #file:docs/exports/PLAN.md
+/spec      Feature: CSV export. Reference: #file:app/api/exports/route.ts
+/plan      Spec: #file:docs/exports/SPEC.md
+/implement task 1 from #file:docs/exports/PLAN.md
 /review my staged changes against #file:docs/exports/SPEC.md
 ```
 

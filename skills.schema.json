@@ -117,7 +117,12 @@
           "required": ["name"],
           "properties": {
             "name": { "type": "string", "minLength": 1 },
-            "source": { "type": "string", "minLength": 1 }
+            "source": { "type": "string", "minLength": 1 },
+            "sourceFile": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Override the upstream file basename to read from when it differs from `name`. Use to rename a command (e.g. expose upstream `build.md` as `/implement`) while avoiding reserved/generic names that Cursor's slash menu filters out."
+            }
           }
         }
       ]

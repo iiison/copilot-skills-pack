@@ -82,7 +82,7 @@ questions.
 
 ```
 💡 Idea   →  📝 Spec    →  📋 Plan    →  🛠 Build   →  ✅ Test    →  🔍 Review   →  ✨ Simplify    →  🚀 Ship
-/idea-refine /spec         /plan          /build        /test        /review         /code-simplify     /ship
+/idea-refine /spec         /plan          /implement    /test        /review         /code-simplify     /ship
                                                                      + chat modes
 ```
 
@@ -159,10 +159,10 @@ Refine #file:docs/dashboards/CSV_EXPORT_PLAN.md.
 Don't expand scope. Don't add new tasks.
 ```
 
-### `/build` — implement one task
+### `/implement` — implement one task
 
 ```
-/build task 2 from #file:docs/dashboards/CSV_EXPORT_PLAN.md
+/implement task 2 from #file:docs/dashboards/CSV_EXPORT_PLAN.md
 
 Constraints:
 - Don't touch files outside this task's scope
@@ -185,7 +185,7 @@ following git-workflow-and-versioning conventions.
 ### `/test` — explicit test work
 
 The `test-driven-development` skill is **always on** for `.ts`/`.tsx`
-files, so this often happens during `/build`. Use the explicit command
+files, so this often happens during `/implement`. Use the explicit command
 when:
 
 - Adding tests to existing untested code
@@ -440,7 +440,7 @@ explicit lifecycle steps.
 
 **Q: Can I stack commands?**
 No — only one slash command per turn. Chain them across turns instead:
-`/build task 3` → next turn "now `/test` what you just built".
+`/implement task 3` → next turn "now `/test` what you just built".
 
 **Q: Slash command vs. chat mode?**
 - **Slash command** = one-turn workflow. Quick.
@@ -465,6 +465,6 @@ A no-risk exercise:
 3. `/spec` it. Save to `docs/sandbox/MY_IDEA_SPEC.md`.
 4. Open that spec. Ask: *"Review for ambiguity. Severity-label findings."*
 5. `/plan` it. Save output as `docs/sandbox/MY_IDEA_PLAN.md`.
-6. `/build` task 1 in a throwaway branch.
+6. `/implement` task 1 in a throwaway branch.
 7. `/review` your own diff.
 8. `git diff` to see what changed; revert anything you dislike.
