@@ -19,9 +19,10 @@ and wired into Copilot via this pack.
 5. [Chat-mode personas — examples](#chat-mode-personas--examples)
 6. [Always-on instructions](#always-on-instructions)
 7. [On-demand prompts](#on-demand-prompts)
-8. [Prompt-writing rules](#prompt-writing-rules)
-9. [Providing context](#providing-context)
-10. [Troubleshooting & FAQ](#troubleshooting--faq)
+8. [Skill reference map](#skill-reference-map)
+9. [Prompt-writing rules](#prompt-writing-rules)
+10. [Providing context](#providing-context)
+11. [Troubleshooting & FAQ](#troubleshooting--faq)
 
 ---
 
@@ -382,6 +383,89 @@ Example:
 I need to deprecate the old /v1/exports endpoint. #deprecation-and-migration
 Give me a migration plan that doesn't break existing clients.
 ```
+
+---
+
+## Skill reference map
+
+Skills don't run in isolation — they invoke and reference each other. There
+are **two mechanisms**:
+
+1. **Hard invocations** — the slash-command files explicitly activate skills
+   via `agent-skills:<name>`. These are the entry points.
+2. **Soft references** — skills mention other skills in their prose ("follow
+   the … skill", "stop and run …"), forming a dependency graph the agent
+   follows as it works.
+
+### Entry points: slash command → skills it activates
+
+| Command | Activates (hard) | Also pulls in (in-flow) |
+|---|---|---|
+| `/spec` | `spec-driven-development` | — |
+| `/plan` | `planning-and-task-breakdown` | — |
+| `/implement` | `incremental-implementation` + `test-driven-development` | `planning-and-task-breakdown`, `debugging-and-error-recovery`, `doubt-driven-development` |
+| `/test` | `test-driven-development` | `browser-testing-with-devtools` |
+| `/review` | `code-review-and-quality` | — |
+| `/code-simplify` | `code-simplification` | — |
+| `/ship` | `shipping-and-launch` | — |
+| `/webperf` | `web-performance-auditor` (persona) | → `browser-testing-with-devtools`, `performance-optimization` |
+
+### Skill → skill graph (soft references)
+
+```mermaid
+flowchart LR
+  II[incremental-implementation] --> GWV[git-workflow-and-versioning]
+  GWV --> CRQ[code-review-and-quality]
+  CRQ --> PO[performance-optimization]
+  CRQ --> SEC[security-and-hardening]
+  TDD[test-driven-development] --> BT[browser-testing-with-devtools]
+  SDD[spec-driven-development] --> CE[context-engineering]
+  SDD --> II
+  SDD --> TDD
+  API[api-and-interface-design] --> DM[deprecation-and-migration]
+  CICD[ci-cd-and-automation] --> DER[debugging-and-error-recovery]
+  DDD[doubt-driven-development] --> CRQ
+  DDD --> DER
+  DDD --> SRC[source-driven-development]
+  DDD --> TDD
+  IM[interview-me] --> DDD
+  IM --> IR[idea-refine]
+  IM --> PTB[planning-and-task-breakdown]
+  IM --> SRC
+  IM --> SDD
+  OBS[observability-and-instrumentation] --> DER
+  OBS --> PO
+  OBS --> SEC
+  OBS --> SL[shipping-and-launch]
+  WPA([web-performance-auditor]) --> BT
+  WPA --> PO
+```
+
+**Leaf skills** (no outgoing references): `browser-testing-with-devtools`,
+`code-simplification`, `context-engineering`, `debugging-and-error-recovery`,
+`deprecation-and-migration`, `documentation-and-adrs`,
+`frontend-ui-engineering`, `idea-refine`, `performance-optimization`,
+`planning-and-task-breakdown`, `security-and-hardening`, `shipping-and-launch`,
+`source-driven-development`.
+
+**Meta router — `using-agent-skills`:** references **all 23** other skills by
+design (it maps incoming work to the right one), so it's omitted from the graph
+above to avoid clutter.
+
+### Worked example — why `/implement` commits your code
+
+```
+/implement
+  └─ activates incremental-implementation
+        └─ references git-workflow-and-versioning   ← atomic commits live here
+  └─ (the command body itself also has an explicit
+      "Commit with a descriptive message" step)
+```
+
+The commit behavior comes from two layers: the `/implement` command's own step
+list, plus `incremental-implementation → git-workflow-and-versioning`, which
+owns the commit conventions (atomic commits, ~100-line sizing, descriptive
+messages).
 
 ---
 
