@@ -71,6 +71,7 @@ Pick from the mode dropdown at the top of the Copilot Chat panel:
 - **`code-reviewer`** — Senior staff engineer review standard
 - **`test-engineer`** — Test strategy + coverage analysis
 - **`security-auditor`** — Threat modeling + OWASP
+- **`web-performance-auditor`** — Core Web Vitals audit (also runnable via `/webperf`)
 
 Modes apply to **every turn** in that chat session until you switch
 back. Use them for whole-conversation specialist work, not one-off
@@ -265,6 +266,18 @@ Pre-launch checklist needed:
 - Rollback procedure
 ```
 
+### `/webperf` — web performance audit
+
+Runs the `web-performance-auditor` persona for a Core Web Vitals audit.
+
+```
+/webperf
+
+Target: #file:app/(app)/dashboards/page.tsx
+Mode: deep
+Focus: LCP and INP regressions after the CSV export change.
+```
+
 ---
 
 ## Chat-mode personas — examples
@@ -311,6 +324,19 @@ For each finding, output: severity, exploit scenario, suggested fix.
 The always-on `security-and-hardening` skill (which auto-applies to
 `app/api/**` files) and the `security-auditor` persona stack here.
 
+### `web-performance-auditor` — Core Web Vitals
+
+```
+[switch mode → web-performance-auditor]
+
+Audit the dashboards route for Core Web Vitals:
+  #file:app/(app)/dashboards/page.tsx
+Run in Deep mode. Report LCP, INP, CLS with measured evidence —
+no guesses. Flag regressions and propose fixes ranked by impact.
+```
+
+Also runnable as a one-shot via the `/webperf` slash command.
+
 ---
 
 ## Always-on instructions
@@ -346,7 +372,8 @@ matching skill often loads itself):
 idea-refine                source-driven-development    api-and-interface-design
 context-engineering        browser-testing-with-devtools  code-simplification
 performance-optimization   ci-cd-and-automation         deprecation-and-migration
-shipping-and-launch
+shipping-and-launch        doubt-driven-development     interview-me
+observability-and-instrumentation                       using-agent-skills
 ```
 
 Example:

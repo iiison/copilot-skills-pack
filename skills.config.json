@@ -121,6 +121,22 @@
     {
       "name": "shipping-and-launch",
       "source": "upstream"
+    },
+    {
+      "name": "doubt-driven-development",
+      "source": "upstream"
+    },
+    {
+      "name": "interview-me",
+      "source": "upstream"
+    },
+    {
+      "name": "observability-and-instrumentation",
+      "source": "upstream"
+    },
+    {
+      "name": "using-agent-skills",
+      "source": "upstream"
     }
   ],
   "slashCommands": [
@@ -151,6 +167,10 @@
     },
     {
       "name": "ship",
+      "source": "upstream"
+    },
+    {
+      "name": "webperf",
       "source": "upstream"
     },
     {
@@ -194,6 +214,11 @@
     },
     {
       "name": "security-auditor",
+      "source": "upstream",
+      "tools": ["codebase", "search", "searchResults", "usages", "findTestFiles", "problems", "githubRepo", "fetch"]
+    },
+    {
+      "name": "web-performance-auditor",
       "source": "upstream",
       "tools": ["codebase", "search", "searchResults", "usages", "findTestFiles", "problems", "githubRepo", "fetch"]
     },

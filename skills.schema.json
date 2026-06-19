@@ -122,6 +122,11 @@
               "type": "string",
               "minLength": 1,
               "description": "Override the upstream file basename to read from when it differs from `name`. Use to rename a command (e.g. expose upstream `build.md` as `/implement`) while avoiding reserved/generic names that Cursor's slash menu filters out."
+            },
+            "tools": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Persona-only: tool ids written to the chat-mode `tools:` frontmatter. Ignored for non-persona entries."
             }
           }
         }

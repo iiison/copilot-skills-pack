@@ -38,20 +38,21 @@ After the install + an editor reload:
 | Surface | Count | Activated by |
 |---|---|---|
 | Always-on instructions | 11 | Matching `applyTo` glob — silent |
-| On-demand prompts | 10 | `#name` in chat |
-| Slash commands | 14 | Type `/` in Copilot Chat |
-| Chat-mode personas | 4 | Mode dropdown at top of chat panel |
+| On-demand prompts | 14 | `#name` in chat |
+| Slash commands | 15 | Type `/` in Copilot Chat |
+| Chat-mode personas | 5 | Mode dropdown at top of chat panel |
 
 Slash commands break down as:
 
 ```
 Core lifecycle (7):  /spec  /plan  /implement  /test  /review  /code-simplify  /ship
+Specialist (1):      /webperf
 UI workflow (7):     /ui-learn  /ui-mcp-status  /ui-refine  /ui-spec
                      /ui-plan   /ui-build       /ui-flag
 ```
 
 Chat-mode personas: `code-reviewer`, `test-engineer`,
-`security-auditor`, `frontend-craftsman`.
+`security-auditor`, `web-performance-auditor`, `frontend-craftsman`.
 
 ---
 
